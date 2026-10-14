@@ -1,6 +1,12 @@
 from sqlalchemy import MetaData
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
@@ -29,3 +35,23 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+def create_worker_sessionmaker() -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+    """Engine + session factory for Celery tasks.
+
+    Each task runs in its own event loop (asyncio.run), and pooled asyncpg
+    connections cannot be shared across loops, so workers use NullPool and
+    dispose the engine when the task finishes.
+    """
+    worker_engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DEBUG,
+        poolclass=NullPool,
+    )
+    factory = async_sessionmaker(
+        bind=worker_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    return worker_engine, factory

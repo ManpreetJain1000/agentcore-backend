@@ -82,7 +82,7 @@ class AgentRunner:
         for iteration in range(1, self.max_iterations + 1):
             iterations = iteration
             if await self._is_cancelled(run):
-                await self._publish(run.id, {"step_type": "done", "status": "cancelled"})
+                await self.mark_cancelled(run.id)
                 return run
 
             # Step 2: LLM call
@@ -162,6 +162,34 @@ class AgentRunner:
             },
         )
         await self._publish(run.id, {"step_type": "done", "status": "failed"})
+
+    async def mark_cancelled(self, run_id: str) -> None:
+        """Mark a run CANCELLED, store a step and notify listeners."""
+        await self.db.rollback()
+        run = await self.db.get(
+            AgentRun, run_id, options=[noload(AgentRun.steps), noload(AgentRun.session)]
+        )
+        if run is None or run.status in (RunStatus.COMPLETED, RunStatus.FAILED):
+            return
+
+        run.status = RunStatus.CANCELLED
+        await self._record_step(run.id, "cancelled", {"reason": "Cancelled by user"})
+        await self._publish(run.id, {"step_type": "done", "status": "cancelled"})
+
+    async def record_retry(
+        self, run_id: str, attempt: int, error: BaseException, countdown: float
+    ) -> None:
+        """Record that the run hit a transient error and will be retried."""
+        await self._record_step(
+            run_id,
+            "retry",
+            {
+                "attempt": attempt,
+                "error": str(error),
+                "type": type(error).__name__,
+                "retry_in_seconds": round(countdown, 1),
+            },
+        )
 
     # ----------------------------------------------------------------- helpers
 

@@ -2,16 +2,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from redis.asyncio import Redis
 
 from app.core.config import settings
 from app.db.base import engine
-from app.routers import auth, sessions
+from app.routers import auth, runs, sessions
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
     yield
-    # Shutdown: close DB connection pool cleanly
+    await app.state.redis.aclose()
     await engine.dispose()
 
 
@@ -33,6 +35,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(sessions.router)
+    app.include_router(runs.router)
 
     @app.get("/health", tags=["health"], summary="Liveness check")
     async def health() -> dict[str, str]:

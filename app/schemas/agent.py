@@ -62,3 +62,42 @@ class AgentSessionOut(BaseModel):
 
 class AgentSessionDetail(AgentSessionOut):
     recent_runs: list[RunSummary] = Field(default_factory=list)
+
+class RunRequest(BaseModel):
+    message: str = Field(
+        min_length=1,
+        max_length=8000,
+        examples=["What is 15% of the current population of Dubai, and remember that fact for me?"],
+    )
+
+    @field_validator("message")
+    @classmethod
+    def message_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Message cannot be blank")
+        return v
+
+
+class RunResponse(BaseModel):
+    run_id: str
+    status: RunStatus
+    created_at: datetime
+
+
+class RunStatusOut(BaseModel):
+    run_id: str
+    status: RunStatus
+    tokens_used: int
+    step_count: int
+    final_answer: str | None
+    created_at: datetime
+
+
+class StepOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    step_type: str
+    payload: dict
+    occurred_at: datetime
