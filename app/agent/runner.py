@@ -11,7 +11,7 @@ from sqlalchemy.orm import joinedload, noload
 
 from app.agent.memory_manager import LongTermMemoryStore, ShortTermMemory
 from app.agent.planner import LLMClient, ToolCall
-from app.agent.tools import ToolContext, dispatch_tool, get_tool_definitions
+from app.agent.tools import ToolContext, dispatch_tool, get_tool_definitions, get_tool_timeout
 from app.core.config import settings
 from app.models.agent import AgentRun, AgentSession, RunStatus, RunStep
 
@@ -231,14 +231,15 @@ class AgentRunner:
             await self._record_step(run_id, "tool_result", {**base, "result": result, "error": True})
             return result
 
+        timeout = get_tool_timeout(call.name) or self.tool_timeout
         try:
             result = await asyncio.wait_for(
-                dispatch_tool(call.name, call.arguments, ctx), timeout=self.tool_timeout
+                dispatch_tool(call.name, call.arguments, ctx), timeout=timeout
             )
         except TimeoutError:
-            result = f"Error: tool '{call.name}' timed out after {self.tool_timeout:g}s."
+            result = f"Error: tool '{call.name}' timed out after {timeout:g}s."
             await self._record_step(
-                run_id, "tool_timeout", {**base, "timeout_seconds": self.tool_timeout}
+                run_id, "tool_timeout", {**base, "timeout_seconds": timeout}
             )
             return result
 
