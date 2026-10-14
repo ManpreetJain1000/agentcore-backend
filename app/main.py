@@ -10,7 +10,6 @@ from app.routers import auth, sessions
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: nothing yet (Redis client etc. added in later features)
     yield
     # Shutdown: close DB connection pool cleanly
     await engine.dispose()
