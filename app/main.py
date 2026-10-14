@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 
 from app.core.config import settings
 from app.db.base import engine
-from app.routers import auth, runs, sessions
+from app.routers import auth, runs, sessions, stream
 
 
 @asynccontextmanager
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(sessions.router)
     app.include_router(runs.router)
+    app.include_router(stream.router)
 
     @app.get("/health", tags=["health"], summary="Liveness check")
     async def health() -> dict[str, str]:

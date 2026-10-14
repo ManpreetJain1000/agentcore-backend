@@ -288,7 +288,7 @@ class AgentRunner:
         step = RunStep(run_id=run_id, step_type=step_type, payload=payload)
         self.db.add(step)
         await self.db.commit()
-        await self._publish(run_id, {"step_type": step_type, "payload": payload})
+        await self._publish(run_id, {"id": step.id, "step_type": step_type, "payload": payload})
         return step
 
     async def _publish(self, run_id: str, event: dict[str, Any]) -> None:
