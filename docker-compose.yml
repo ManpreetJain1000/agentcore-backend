@@ -1,0 +1,84 @@
+name: agentcore
+
+x-app: &app
+  build: .
+  image: agentcore:latest
+  env_file: .env
+  environment:
+    # Container hostnames override the localhost URLs from .env
+    DATABASE_URL: postgresql+asyncpg://agentcore:agentcore@db:5432/agentcore
+    REDIS_URL: redis://redis:6379/0
+    TEST_DATABASE_URL: postgresql+asyncpg://agentcore:agentcore@db:5432/agentcore_test
+  restart: unless-stopped
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: agentcore
+      POSTGRES_PASSWORD: agentcore
+      POSTGRES_DB: agentcore
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"   # 5433 on the host so it doesn't clash with a local Postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentcore -d agentcore"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"   # 6380 on the host so it doesn't clash with a local Redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    stop_grace_period: 60s   # let in-flight runs finish on shutdown
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
