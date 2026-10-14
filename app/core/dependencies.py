@@ -3,10 +3,13 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.core.security import TokenError, decode_access_token
 from app.db.base import AsyncSessionLocal
+from app.models.agent import AgentSession
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -44,4 +47,22 @@ async def get_current_user(
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
-# get_redis will be added here in the Redis/memory feature commit.
+
+async def get_owned_session(
+    session_id: str,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> AgentSession:
+    """Load a session that belongs to the caller, or 404."""
+    stmt = (
+        select(AgentSession)
+        .where(AgentSession.id == session_id, AgentSession.user_id == current_user.id)
+        .options(noload(AgentSession.runs))  # don't pull every run + step
+    )
+    session = await db.scalar(stmt)
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    return session
+
+
+OwnedSession = Annotated[AgentSession, Depends(get_owned_session)]
