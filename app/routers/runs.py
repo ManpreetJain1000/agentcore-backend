@@ -103,31 +103,34 @@ async def get_run_steps(run: OwnedRun, db: DbSession) -> list[RunStep]:
     },
 )
 async def cancel_run(run: OwnedRun, db: DbSession, redis: RedisClient) -> RunResponse:
+    run_id = run.id
+    created_at = run.created_at
     was_queued = run.status == RunStatus.QUEUED
 
     # Conditional update: never overwrite a run that finished in the meantime
     result = await db.execute(
         update(AgentRun)
-        .where(AgentRun.id == run.id, AgentRun.status.in_(ACTIVE_STATUSES))
+        .where(AgentRun.id == run_id, AgentRun.status.in_(ACTIVE_STATUSES))
         .values(status=RunStatus.CANCELLED)
         .execution_options(synchronize_session=False)
     )
     if result.rowcount == 0:
         await db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, f"Run is already {run.status.value}")
+        current_status = await db.scalar(select(AgentRun.status).where(AgentRun.id == run_id))
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Run is already {current_status.value}")
     await db.commit()
 
     # Stop the worker mid-loop: SIGUSR1 raises SoftTimeLimitExceeded inside the task
     await run_in_threadpool(
-        celery_app.control.revoke, run.id, terminate=True, signal="SIGUSR1"
+        celery_app.control.revoke, run_id, terminate=True, signal="SIGUSR1"
     )
 
     if was_queued:
         # No worker will pick this up, so close the trace and the stream here
-        db.add(RunStep(run_id=run.id, step_type="cancelled", payload={"reason": "Cancelled before start"}))
+        db.add(RunStep(run_id=run_id, step_type="cancelled", payload={"reason": "Cancelled before start"}))
         await db.commit()
         await redis.publish(
-            run_channel(run.id), json.dumps({"step_type": "done", "status": "cancelled"})
+            run_channel(run_id), json.dumps({"step_type": "done", "status": "cancelled"})
         )
 
-    return RunResponse(run_id=run.id, status=RunStatus.CANCELLED, created_at=run.created_at)
+    return RunResponse(run_id=run_id, status=RunStatus.CANCELLED, created_at=created_at)
