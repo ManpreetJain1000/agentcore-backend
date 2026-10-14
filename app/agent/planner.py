@@ -111,3 +111,6 @@ class LLMClient:
                 f"Embedding has {len(vector)} dimensions, expected {EMBEDDING_DIM}"
             )
         return vector
+    
+    async def aclose(self) -> None:
+        await self._client.close()

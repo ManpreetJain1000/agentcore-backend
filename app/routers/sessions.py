@@ -1,10 +1,12 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import noload
 
-from app.core.dependencies import CurrentUser, DbSession, OwnedSession
+from app.agent.memory_manager import ShortTermMemory
+from app.core.dependencies import CurrentUser, DbSession, OwnedSession, RedisClient
 from app.models.agent import AgentRun, AgentSession
 from app.schemas.agent import (
     AgentSessionCreate,
@@ -12,6 +14,8 @@ from app.schemas.agent import (
     AgentSessionOut,
     RunSummary,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -98,13 +102,19 @@ async def get_session(session: OwnedSession, db: DbSession) -> AgentSessionDetai
 @router.delete(
     "/{session_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a session and all of its runs",
+    summary="Delete a session, all of its runs and its short-term memory",
     responses={
         401: {"description": "Missing or invalid token"},
         404: {"description": "Session not found"},
     },
 )
-async def delete_session(session: OwnedSession, db: DbSession) -> None:
+async def delete_session(session: OwnedSession, db: DbSession, redis: RedisClient) -> None:
+    session_id = session.id
     # Runs and steps are removed by ON DELETE CASCADE in Postgres
     await db.delete(session)
     await db.commit()
+
+    try:
+        await ShortTermMemory(redis).clear(session_id)
+    except Exception:  # noqa: BLE001 - the session is gone; a stale Redis key will expire on its own
+        logger.warning("Could not clear short-term memory for session %s", session_id, exc_info=True)

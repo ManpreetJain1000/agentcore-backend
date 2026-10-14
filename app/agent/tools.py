@@ -346,5 +346,7 @@ async def remember_fact(
     """Store a fact about the user in long-term memory so it can be recalled in future conversations."""
     fact = fact.strip()
     store = LongTermMemoryStore(ctx.db, ctx.llm)
-    await store.add(ctx.user_id, fact, source_run_id=ctx.run_id)
-    return f"Remembered: {fact}"
+    memory, created = await store.add(ctx.user_id, fact, source_run_id=ctx.run_id)
+    if created:
+        return f"Remembered: {fact}"
+    return f"Already remembered: {memory.content}"

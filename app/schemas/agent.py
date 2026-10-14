@@ -101,3 +101,15 @@ class StepOut(BaseModel):
     step_type: str
     payload: dict
     occurred_at: datetime
+
+class MemoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    content: str
+    source_run_id: str | None
+    created_at: datetime
+
+
+class MemorySearchResult(MemoryOut):
+    similarity: float = Field(description="Cosine similarity: 1 = identical meaning, 0 = unrelated")

@@ -39,7 +39,10 @@ class Settings(BaseSettings):
     # Memory
     SHORT_TERM_CONTEXT_MESSAGES: int = 10
     SHORT_TERM_MAX_TURNS: int = 20
+    SHORT_TERM_TTL_SECONDS: int = 7 * 24 * 3600
     LONG_TERM_TOP_K: int = 3
+    LONG_TERM_SEARCH_LIMIT: int = 5
+    LONG_TERM_DEDUP_DISTANCE: float = 0.05
 
 
 @lru_cache

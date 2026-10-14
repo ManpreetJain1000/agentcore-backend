@@ -12,6 +12,7 @@ from app.core.security import TokenError, decode_access_token
 from app.db.base import AsyncSessionLocal
 from app.models.agent import AgentRun, AgentSession
 from app.models.user import User
+from app.agent.planner import LLMClient
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
@@ -33,6 +34,12 @@ async def get_redis(request: Request) -> Redis:
 
 RedisClient = Annotated[Redis, Depends(get_redis)]
 
+async def get_llm(request: Request) -> LLMClient:
+    """Shared LLM client created in the app lifespan."""
+    return request.app.state.llm
+
+
+LLM = Annotated[LLMClient, Depends(get_llm)]
 
 async def _user_from_token(token: str | None, db: AsyncSession) -> User:
     credentials_exc = HTTPException(

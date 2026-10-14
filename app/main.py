@@ -4,15 +4,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
+from app.agent.planner import LLMClient
 from app.core.config import settings
 from app.db.base import engine
-from app.routers import auth, runs, sessions, stream
+from app.routers import auth, memory, runs, sessions, stream
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    app.state.llm = LLMClient()
     yield
+    await app.state.llm.aclose()
     await app.state.redis.aclose()
     await engine.dispose()
 
@@ -37,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(runs.router)
     app.include_router(stream.router)
+    app.include_router(memory.router)
 
     @app.get("/health", tags=["health"], summary="Liveness check")
     async def health() -> dict[str, str]:
