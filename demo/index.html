@@ -48,8 +48,6 @@
   .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
             padding: .85rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--rule); }
   .brand { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em; }
-  .api-field { display: flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--muted); }
-  .api-field input { width: 16rem; }
 
   .layout { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; min-height: calc(100vh - 60px); }
   .sidebar { background: var(--surface); border-right: 1px solid var(--rule); padding: 1.25rem 1.5rem 2rem;
@@ -141,15 +139,23 @@
     .layout { grid-template-columns: 1fr; }
     .sidebar { border-right: 0; border-bottom: 1px solid var(--rule); }
     .stage { padding: 1.25rem 1rem 3rem; }
-    .api-field input { width: 12rem; }
     .run-actions { margin-left: 0; }
   }
+  .tool-list { list-style: none; margin: .45rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+  .tool-option { width: 100%; text-align: left; display: grid; grid-template-columns: 1rem 1fr; gap: .05rem .55rem;
+                 padding: .45rem .6rem; background: var(--paper); color: var(--ink); border: 1px solid var(--rule);
+                 border-radius: 6px; font-weight: 400; }
+  .tool-option::before { content: ""; grid-row: span 2; width: .85rem; height: .85rem; margin-top: .25rem;
+                         border-radius: 3px; border: 1.5px solid var(--muted); }
+  .tool-option[aria-pressed="true"] { border-color: var(--tool); }
+  .tool-option[aria-pressed="true"]::before { background: var(--tool); border-color: var(--tool); }
+  .tool-name { font-family: var(--mono); font-size: .82rem; font-weight: 500; }
+  .tool-about { font-size: .8rem; color: var(--muted); }
 </style>
 </head>
 <body>
 <header class="topbar">
   <div class="brand">AgentCore run viewer</div>
-  <label class="api-field">API address <input id="api-base" type="url" spellcheck="false"></label>
 </header>
 
 <div class="layout">
@@ -185,8 +191,9 @@
             <input id="new-name" value="Research Assistant">
             <label for="new-prompt">System prompt</label>
             <textarea id="new-prompt">You are a research assistant. Use tools for facts and maths instead of guessing.</textarea>
-            <label for="new-tools">Tools (comma separated)</label>
+            <label for="new-tools">Tools (comma separated, or pick from the list)</label>
             <input id="new-tools" value="web_search, calculator, remember_fact" spellcheck="false">
+            <ul class="tool-list" id="tool-list" aria-label="Available tools"></ul>
             <div class="row"><button type="button" class="secondary" id="create-session">Create session</button></div>
           </details>
           <label for="message">Message</label>
@@ -254,9 +261,19 @@
   const $ = (id) => document.getElementById(id);
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const STATUS_LABELS = { queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Cancelled" };
+  const API_BASE = "http://localhost:8000";
+
+  // Keep in sync with the @tool functions in app/agent/tools.py
+  const AVAILABLE_TOOLS = [
+    { name: "web_search", about: "Search the web and return top snippets" },
+    { name: "calculator", about: "Evaluate a maths expression safely" },
+    { name: "get_current_datetime", about: "Current UTC date and time" },
+    { name: "summarise_text", about: "Summarise long text with the model" },
+    { name: "remember_fact", about: "Save a fact to long-term memory" },
+  ];
 
   const state = {
-    api: "http://localhost:8000",
+    api: API_BASE,
     token: null,
     email: null,
     runId: null,
@@ -367,12 +384,39 @@
     }
   }
 
+  function resetWorkspace() {
+    Object.assign(state, { runId: null, message: "", status: null, step: 0, started: 0, finished: false });
+
+    $("timeline").replaceChildren();
+    $("final").hidden = true;
+    $("final-text").textContent = "";
+    $("run-panel").hidden = true;
+    $("empty").hidden = false;
+    $("run-id").textContent = "";
+    $("run-message").textContent = "";
+    $("run-tokens").textContent = "";
+    $("run-elapsed").textContent = "0.0s";
+
+    ["auth-note", "run-note", "stream-note"].forEach((id) => setNote(id, ""));
+
+    // Back to the original values written in the HTML
+    $("auth-form").reset();
+    $("run-form").reset();
+    $("replay-form").reset();
+    $("new-session").open = false;
+
+    $("session-select").replaceChildren();
+    $("memory-list").replaceChildren();
+    syncToolOptions();
+  }
+
   function signOut(message) {
     closeStream();
     state.token = null;
     state.email = null;
     store("ac_token", null);
     store("ac_email", null);
+    resetWorkspace();
     renderAuth();
     setNote("auth-note", message || "");
   }
@@ -423,6 +467,41 @@
     } catch (error) {
       setNote("run-note", error.message, true);
     }
+  }
+
+    // --- Tool picker ----------------------------------------------------------------
+    function selectedTools() {
+    return $("new-tools").value.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+
+  function syncToolOptions() {
+    const selected = new Set(selectedTools());
+    for (const button of $("tool-list").querySelectorAll("button")) {
+      button.setAttribute("aria-pressed", String(selected.has(button.dataset.tool)));
+    }
+  }
+
+  function toggleTool(name) {
+    const tools = selectedTools();
+    const next = tools.includes(name) ? tools.filter((t) => t !== name) : [...tools, name];
+    $("new-tools").value = next.join(", ");
+    syncToolOptions();
+  }
+
+  function renderToolOptions() {
+    const list = $("tool-list");
+    list.replaceChildren();
+    for (const tool of AVAILABLE_TOOLS) {
+      const button = el("button", "tool-option");
+      button.type = "button";
+      button.dataset.tool = tool.name;
+      button.append(el("span", "tool-name", tool.name), el("span", "tool-about", tool.about));
+      button.addEventListener("click", () => toggleTool(tool.name));
+      const item = el("li");
+      item.append(button);
+      list.append(item);
+    }
+    syncToolOptions();
   }
 
   // --- Memory ---------------------------------------------------------------------
@@ -630,6 +709,7 @@
   $("create-session").addEventListener("click", createSession);
   $("session-select").addEventListener("change", updateRunButton);
   $("refresh-memory").addEventListener("click", () => loadMemories().catch((e) => setNote("run-note", e.message, true)));
+  $("new-tools").addEventListener("input", syncToolOptions);
 
   $("run-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -668,14 +748,8 @@
     }
   });
 
-  $("api-base").addEventListener("change", (e) => {
-    state.api = e.target.value.trim().replace(/\/+$/, "") || "http://localhost:8000";
-    e.target.value = state.api;
-    store("ac_api", state.api);
-  });
-
   // --- Start ------------------------------------------------------------------------------
-  state.api = recall("ac_api") || state.api;
+  renderToolOptions();
   state.token = recall("ac_token");
   state.email = recall("ac_email");
   $("api-base").value = state.api;
