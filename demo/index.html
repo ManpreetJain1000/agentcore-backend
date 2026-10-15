@@ -262,6 +262,7 @@
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const STATUS_LABELS = { queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Cancelled" };
   const API_BASE = "http://localhost:8000";
+  const DISPLAY_TIMEZONE = "Asia/Kolkata";
 
   // Keep in sync with the @tool functions in app/agent/tools.py
   const AVAILABLE_TOOLS = [
@@ -316,6 +317,18 @@
       try { args = JSON.parse(raw || "{}"); } catch (_) { return raw; }
     }
     return Object.entries(args || {}).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join(", ");
+  }
+  function formatTimestamp(value) {
+    // The API returns UTC timestamps without a timezone marker, so mark them as UTC
+    const hasZone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(value);
+    const date = new Date(hasZone ? value : `${value}Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    const formatted = date.toLocaleString("en-IN", {
+      timeZone: DISPLAY_TIMEZONE,
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    return `${formatted} IST`;
   }
 
   // --- API ---------------------------------------------------------------------
@@ -516,7 +529,7 @@
     }
     for (const memory of memories) {
       const item = el("li", null, memory.content);
-      const time = el("time", null, new Date(memory.created_at).toLocaleString());
+      const time = el("time", null, formatTimestamp(memory.created_at));
       time.dateTime = memory.created_at;
       item.append(time);
       list.append(item);
