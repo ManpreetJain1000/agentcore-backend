@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentCore run viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F3F5F8;
+    --surface: #FFFFFF;
+    --ink: #18233A;
+    --muted: #5B677A;
+    --rule: #D6DCE4;
+    --llm: #4B3FC4;
+    --tool: #0E7C74;
+    --result: #4F7A18;
+    --alert: #B23A2E;
+    --meta: #8792A2;
+    --font: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #11161F;
+      --surface: #18202C;
+      --ink: #E6EAF0;
+      --muted: #9AA5B5;
+      --rule: #2A3443;
+      --llm: #A49BFF;
+      --tool: #4FC7BC;
+      --result: #A6CF6A;
+      --alert: #FF8A7A;
+      --meta: #7D889A;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: var(--font); background: var(--paper); color: var(--ink); font-size: 15px; line-height: 1.5; }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--llm); outline-offset: 2px; }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+            padding: .85rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--rule); }
+  .brand { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em; }
+  .api-field { display: flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--muted); }
+  .api-field input { width: 16rem; }
+
+  .layout { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; min-height: calc(100vh - 60px); }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--rule); padding: 1.25rem 1.5rem 2rem;
+             display: flex; flex-direction: column; gap: 1.6rem; }
+  .panel h2 { font-size: .95rem; font-weight: 600; margin: 0 0 .5rem; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; }
+
+  label { display: block; font-size: .85rem; color: var(--muted); margin: .55rem 0 .25rem; }
+  input, textarea, select { width: 100%; font: inherit; color: var(--ink); background: var(--paper);
+                            border: 1px solid var(--rule); border-radius: 6px; padding: .5rem .6rem; }
+  textarea { resize: vertical; min-height: 5rem; }
+  button { font: inherit; font-weight: 600; border-radius: 6px; padding: .5rem .9rem; cursor: pointer;
+           border: 1px solid var(--ink); background: var(--ink); color: var(--paper); }
+  button.secondary { background: transparent; color: var(--ink); border-color: var(--rule); }
+  button.link { background: none; border: 0; padding: 0; color: var(--llm); font-weight: 500; font-size: .85rem; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .8rem; }
+  .note { font-size: .85rem; color: var(--muted); margin: .5rem 0 0; }
+  .note:empty { display: none; }
+  .note.error { color: var(--alert); }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 1.6rem; }
+  fieldset:disabled { opacity: .5; }
+  details.new-session { margin-top: .6rem; }
+  details.new-session summary { cursor: pointer; font-size: .85rem; color: var(--llm); width: max-content; }
+
+  .memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .memory-list li { font-size: .9rem; background: var(--paper); border-left: 3px solid var(--result);
+                    border-radius: 0 6px 6px 0; padding: .45rem .6rem; overflow-wrap: anywhere; }
+  .memory-list time { display: block; font-size: .75rem; color: var(--muted); }
+  .memory-list .empty-item { border-left-color: var(--rule); color: var(--muted); }
+
+  .stage { padding: 1.5rem 2rem 4rem; max-width: 940px; width: 100%; }
+  .empty { margin-top: 3.5rem; max-width: 46ch; color: var(--muted); }
+  .empty h1 { color: var(--ink); font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 .6rem; }
+
+  .run-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.1rem;
+              padding-bottom: 1rem; border-bottom: 1px solid var(--rule); }
+  .run-question { flex: 1 1 100%; margin: 0; font-size: 1.35rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+  .pill { display: inline-flex; align-items: center; gap: .45rem; font-size: .85rem; font-weight: 600;
+          padding: .15rem .65rem; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); }
+  .pill::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--meta); }
+  .pill[data-status="running"]::before { background: var(--llm); animation: pulse 1.2s ease-in-out infinite; }
+  .pill[data-status="completed"]::before { background: var(--result); }
+  .pill[data-status="failed"]::before, .pill[data-status="cancelled"]::before { background: var(--alert); }
+  .run-meta { font-size: .85rem; color: var(--muted); }
+  .run-id { font-family: var(--mono); font-size: .78rem; }
+  .run-actions { margin-top: 0; margin-left: auto; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; margin-top: .8rem; font-size: .8rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .legend span::before { content: ""; width: .6rem; height: .6rem; border-radius: 50%; background: var(--kind); }
+
+  .timeline { list-style: none; margin: 1.25rem 0 0; padding: 0; }
+  .step { display: grid; grid-template-columns: 2.25rem 1fr; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+  .step::before { content: ""; position: absolute; left: calc(1.125rem - 1px); top: 2.25rem; bottom: 0; width: 2px; background: var(--rule); }
+  .step:last-child::before { display: none; }
+  .step-no { width: 2.25rem; height: 2.25rem; border-radius: 50%; display: grid; place-items: center;
+             font-weight: 700; font-size: .85rem; background: var(--kind); color: var(--surface); }
+  .step-body { min-width: 0; background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--kind);
+               border-radius: 4px 8px 8px 4px; padding: .7rem .95rem; }
+  .step-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+  .step-title { font-weight: 600; }
+  .step-time { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .step-text { margin: .35rem 0 0; color: var(--muted); overflow-wrap: anywhere; }
+  .step-list { margin: .35rem 0 0; padding-left: 1.2rem; color: var(--ink); }
+  .step pre, .raw pre { font-family: var(--mono); font-size: .82rem; line-height: 1.45; background: var(--paper);
+                        border-radius: 6px; padding: .55rem .7rem; margin: .5rem 0 0; white-space: pre-wrap;
+                        overflow-wrap: anywhere; max-height: 16rem; overflow: auto; }
+  .raw summary { font-size: .8rem; color: var(--muted); cursor: pointer; margin-top: .5rem; width: max-content; }
+
+  .step--llm, .legend .k-llm { --kind: var(--llm); }
+  .step--tool, .legend .k-tool { --kind: var(--tool); }
+  .step--result, .legend .k-result { --kind: var(--result); }
+  .step--alert, .legend .k-alert { --kind: var(--alert); }
+  .step--meta, .legend .k-meta { --kind: var(--meta); }
+  .step--final { --kind: var(--ink); }
+
+  .final { margin-top: .4rem; padding: 1.25rem 1.4rem; border: 2px solid var(--ink); border-radius: 10px; background: var(--surface); }
+  .final h2 { font-size: .9rem; font-weight: 600; color: var(--muted); margin: 0 0 .4rem; }
+  .final p { margin: 0; font-size: 1.15rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 70ch; }
+
+  .step.is-new .step-body { animation: arrive .7s ease-out; }
+  @keyframes arrive { from { background: color-mix(in srgb, var(--kind) 16%, var(--surface)); } to { background: var(--surface); } }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) {
+    .step.is-new .step-body, .pill::before { animation: none !important; }
+  }
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { border-right: 0; border-bottom: 1px solid var(--rule); }
+    .stage { padding: 1.25rem 1rem 3rem; }
+    .api-field input { width: 12rem; }
+    .run-actions { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">AgentCore run viewer</div>
+  <label class="api-field">API address <input id="api-base" type="url" spellcheck="false"></label>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <h2>Account</h2>
+      <form id="auth-form">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" minlength="8" required>
+        <div class="row">
+          <button type="submit">Sign in</button>
+          <button type="button" class="secondary" id="register">Create account</button>
+        </div>
+      </form>
+      <div id="signed-in" hidden>
+        <p class="note">Signed in as <strong id="who"></strong></p>
+        <div class="row"><button type="button" class="secondary" id="sign-out">Sign out</button></div>
+      </div>
+      <p class="note" id="auth-note" role="status"></p>
+    </section>
+
+    <fieldset id="work" disabled>
+      <section class="panel">
+        <h2>Ask the agent</h2>
+        <form id="run-form">
+          <label for="session-select">Session</label>
+          <select id="session-select"></select>
+          <details class="new-session" id="new-session">
+            <summary>New session</summary>
+            <label for="new-name">Name</label>
+            <input id="new-name" value="Research Assistant">
+            <label for="new-prompt">System prompt</label>
+            <textarea id="new-prompt">You are a research assistant. Use tools for facts and maths instead of guessing.</textarea>
+            <label for="new-tools">Tools (comma separated)</label>
+            <input id="new-tools" value="web_search, calculator, remember_fact" spellcheck="false">
+            <div class="row"><button type="button" class="secondary" id="create-session">Create session</button></div>
+          </details>
+          <label for="message">Message</label>
+          <textarea id="message">What is 15% of the current population of Dubai, and remember that fact for me?</textarea>
+          <div class="row"><button type="submit" id="run-button">Run agent</button></div>
+        </form>
+        <p class="note" id="run-note" role="status"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Replay a saved run</h2>
+        <form id="replay-form">
+          <label for="replay-id">Run ID</label>
+          <input id="replay-id" spellcheck="false" required>
+          <div class="row"><button type="submit" class="secondary">Replay</button></div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>What the agent remembers</h2>
+          <button type="button" class="link" id="refresh-memory">Refresh</button>
+        </div>
+        <ul class="memory-list" id="memory-list"></ul>
+      </section>
+    </fieldset>
+  </aside>
+
+  <main class="stage">
+    <div class="empty" id="empty">
+      <h1>Watch an agent run, step by step</h1>
+      <p>Sign in, choose a session and send a message. Each model decision, tool call and result appears here the moment the worker records it.</p>
+    </div>
+
+    <section id="run-panel" hidden>
+      <div class="run-head">
+        <p class="run-question" id="run-message"></p>
+        <span class="pill" id="run-status" data-status="queued">Queued</span>
+        <span class="run-meta" id="run-elapsed">0.0s</span>
+        <span class="run-meta" id="run-tokens"></span>
+        <span class="run-meta">Run <span class="run-id" id="run-id"></span></span>
+        <div class="row run-actions">
+          <button type="button" class="secondary" id="cancel">Cancel run</button>
+          <button type="button" class="secondary" id="replay">Replay from saved steps</button>
+        </div>
+      </div>
+      <div class="legend" aria-hidden="true">
+        <span class="k-llm">Model</span>
+        <span class="k-tool">Tool call</span>
+        <span class="k-result">Tool result</span>
+        <span class="k-alert">Problem</span>
+        <span class="k-meta">Setup</span>
+      </div>
+      <p class="note" id="stream-note" role="status"></p>
+      <ol class="timeline" id="timeline" aria-live="polite"></ol>
+      <div class="final" id="final" hidden>
+        <h2>Final answer</h2>
+        <p id="final-text"></p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const STATUS_LABELS = { queued: "Queued", running: "Running", completed: "Completed", failed: "Failed", cancelled: "Cancelled" };
+
+  const state = {
+    api: "http://localhost:8000",
+    token: null,
+    email: null,
+    runId: null,
+    message: "",
+    status: null,
+    source: null,
+    step: 0,
+    started: 0,
+    timer: null,
+    finished: false,
+  };
+
+  // --- Small helpers -----------------------------------------------------------
+  function store(key, value) {
+    try { value == null ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, value); } catch (_) {}
+  }
+  function recall(key) {
+    try { return sessionStorage.getItem(key); } catch (_) { return null; }
+  }
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function setNote(id, message, isError = false) {
+    const node = $(id);
+    node.textContent = message || "";
+    node.classList.toggle("error", Boolean(isError));
+  }
+  function elapsed() {
+    return ((performance.now() - state.started) / 1000).toFixed(1);
+  }
+  function truncate(text, max) {
+    return text.length > max ? text.slice(0, max - 1) + "…" : text;
+  }
+  function formatArgs(raw) {
+    let args = raw;
+    if (typeof raw === "string") {
+      try { args = JSON.parse(raw || "{}"); } catch (_) { return raw; }
+    }
+    return Object.entries(args || {}).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join(", ");
+  }
+
+  // --- API ---------------------------------------------------------------------
+  function errorMessage(data, status) {
+    const detail = data && data.detail;
+    if (Array.isArray(detail)) return detail.map((e) => String(e.msg).replace(/^Value error, /, "")).join("; ");
+    if (typeof detail === "string") return detail;
+    return `Request failed with status ${status}.`;
+  }
+
+  async function api(path, { method = "GET", json, form } = {}) {
+    const headers = {};
+    let body;
+    if (state.token) headers.Authorization = `Bearer ${state.token}`;
+    if (json !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(json); }
+    if (form) body = new URLSearchParams(form);
+
+    let response;
+    try {
+      response = await fetch(state.api + path, { method, headers, body });
+    } catch (_) {
+      throw new Error(`Can't reach the API at ${state.api}. Check that it is running.`);
+    }
+    if (response.status === 204) return null;
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      if (response.status === 401 && state.token) signOut("Your session expired. Sign in again.");
+      throw new Error(errorMessage(data, response.status));
+    }
+    return data;
+  }
+
+  // --- Auth ----------------------------------------------------------------------
+  function renderAuth() {
+    const signedIn = Boolean(state.token);
+    $("auth-form").hidden = signedIn;
+    $("signed-in").hidden = !signedIn;
+    $("who").textContent = state.email || "";
+    $("work").disabled = !signedIn;
+    if (!signedIn) {
+      $("session-select").replaceChildren();
+      $("memory-list").replaceChildren();
+    }
+  }
+
+  async function authenticate(register) {
+    const email = $("email").value.trim();
+    const password = $("password").value;
+    if (!email || password.length < 8) {
+      setNote("auth-note", "Enter an email and a password of at least 8 characters.", true);
+      return;
+    }
+    setNote("auth-note", "");
+    try {
+      const data = register
+        ? await api("/auth/register", { method: "POST", json: { email, password } })
+        : await api("/auth/token", { method: "POST", form: { username: email, password } });
+      state.token = data.access_token;
+      state.email = email;
+      store("ac_token", state.token);
+      store("ac_email", email);
+      renderAuth();
+      await refreshAll();
+    } catch (error) {
+      setNote("auth-note", error.message, true);
+    }
+  }
+
+  function signOut(message) {
+    closeStream();
+    state.token = null;
+    state.email = null;
+    store("ac_token", null);
+    store("ac_email", null);
+    renderAuth();
+    setNote("auth-note", message || "");
+  }
+
+  async function refreshAll() {
+    try {
+      await Promise.all([loadSessions(), loadMemories()]);
+    } catch (error) {
+      setNote("auth-note", error.message, true);
+    }
+  }
+
+  // --- Sessions -------------------------------------------------------------------
+  async function loadSessions(selectId) {
+    const sessions = await api("/sessions");
+    const select = $("session-select");
+    select.replaceChildren();
+    if (!sessions.length) {
+      const option = new Option("No sessions yet. Create one below.", "");
+      option.disabled = true;
+      select.add(option);
+      $("new-session").open = true;
+    }
+    for (const session of sessions) {
+      const tools = session.tools_enabled.length ? session.tools_enabled.join(", ") : "no tools";
+      select.add(new Option(`${session.name} (${tools})`, session.id));
+    }
+    if (selectId) select.value = selectId;
+    updateRunButton();
+  }
+
+  function updateRunButton() {
+    $("run-button").disabled = !$("session-select").value;
+  }
+
+  async function createSession() {
+    const name = $("new-name").value.trim();
+    if (!name) { setNote("run-note", "Give the session a name.", true); return; }
+    const tools = $("new-tools").value.split(",").map((t) => t.trim()).filter(Boolean);
+    try {
+      const session = await api("/sessions", {
+        method: "POST",
+        json: { name, system_prompt: $("new-prompt").value, tools_enabled: tools },
+      });
+      await loadSessions(session.id);
+      $("new-session").open = false;
+      setNote("run-note", `Session "${session.name}" created.`);
+    } catch (error) {
+      setNote("run-note", error.message, true);
+    }
+  }
+
+  // --- Memory ---------------------------------------------------------------------
+  async function loadMemories() {
+    if (!state.token) return;
+    const list = $("memory-list");
+    const memories = await api("/memory?limit=20");
+    list.replaceChildren();
+    if (!memories.length) {
+      list.append(el("li", "empty-item", "Nothing remembered yet. Ask the agent to remember a fact."));
+      return;
+    }
+    for (const memory of memories) {
+      const item = el("li", null, memory.content);
+      const time = el("time", null, new Date(memory.created_at).toLocaleString());
+      time.dateTime = memory.created_at;
+      item.append(time);
+      list.append(item);
+    }
+  }
+
+  // --- Run and stream ---------------------------------------------------------------
+  function setStatus(status) {
+    state.status = status;
+    const pill = $("run-status");
+    pill.dataset.status = status;
+    pill.textContent = STATUS_LABELS[status] || status;
+    $("cancel").hidden = !(status === "queued" || status === "running");
+  }
+
+  function startTimer() {
+    stopTimer();
+    state.timer = setInterval(() => { $("run-elapsed").textContent = `${elapsed()}s`; }, 100);
+  }
+  function stopTimer() {
+    if (state.timer) clearInterval(state.timer);
+    state.timer = null;
+  }
+  function closeStream() {
+    if (state.source) state.source.close();
+    state.source = null;
+    stopTimer();
+  }
+
+  function openStream(runId, message) {
+    closeStream();
+    state.runId = runId;
+    state.message = message || "Replay of a saved run";
+    state.step = 0;
+    state.started = performance.now();
+    state.finished = false;
+
+    $("empty").hidden = true;
+    $("run-panel").hidden = false;
+    $("timeline").replaceChildren();
+    $("final").hidden = true;
+    $("run-message").textContent = state.message;
+    $("run-id").textContent = runId;
+    $("run-tokens").textContent = "";
+    $("run-elapsed").textContent = "0.0s";
+    setNote("stream-note", "");
+    setStatus("queued");
+    startTimer();
+
+    const url = `${state.api}/runs/${encodeURIComponent(runId)}/stream?access_token=${encodeURIComponent(state.token)}`;
+    const source = new EventSource(url);
+    state.source = source;
+
+    source.onopen = () => setNote("stream-note", "");
+    source.onmessage = (message) => {
+      let event;
+      try { event = JSON.parse(message.data); } catch (_) { return; }
+      handleEvent(event);
+    };
+    source.onerror = () => {
+      if (state.finished) return;
+      if (source.readyState === EventSource.CLOSED) {
+        stopTimer();
+        $("cancel").hidden = true;
+        setNote("stream-note", "The stream could not be opened. Check the run ID and that you are signed in as its owner.", true);
+      } else {
+        setNote("stream-note", "Connection dropped. Reconnecting and resuming after the last step received.");
+      }
+    };
+  }
+
+  function handleEvent(event) {
+    if (event.step_type === "done") { finish(event.status); return; }
+    if (event.step_type === "status") setStatus(event.payload?.status || "running");
+    else if (state.status === "queued") setStatus("running");
+    appendStep(event);
+    if (event.step_type === "final_answer") showFinal(event.payload?.content ?? "");
+  }
+
+  async function finish(status) {
+    state.finished = true;
+    closeStream();
+    setStatus(status || "completed");
+    $("run-elapsed").textContent = `${elapsed()}s`;
+    try {
+      const info = await api(`/runs/${encodeURIComponent(state.runId)}/status`);
+      $("run-tokens").textContent = `${info.tokens_used} tokens, ${info.step_count} saved steps`;
+      if ($("final").hidden && info.final_answer) showFinal(info.final_answer);
+    } catch (_) {}
+    loadMemories().catch(() => {});
+  }
+
+  function showFinal(text) {
+    $("final-text").textContent = text || "The model returned an empty answer.";
+    $("final").hidden = false;
+  }
+
+  function describe(event) {
+    const p = event.payload || {};
+    switch (event.step_type) {
+      case "status":
+        return { kind: "meta", title: "A worker picked up the run" };
+      case "context": {
+        const tools = p.tools || [];
+        const blocks = [
+          { text: `${p.history_messages ?? 0} earlier messages from this session loaded.` },
+          { text: tools.length ? `Tools available: ${tools.join(", ")}.` : "No tools are enabled for this session." },
+        ];
+        if (p.memories && p.memories.length) {
+          blocks.push({ text: "Facts recalled from long-term memory:" }, { list: p.memories });
+        }
+        return { kind: "meta", title: "Context assembled", blocks };
+      }
+      case "llm_call": {
+        const calls = p.tool_calls || [];
+        const tokens = (p.usage?.prompt_tokens || 0) + (p.usage?.completion_tokens || 0);
+        const side = `Round ${p.iteration ?? "?"}, ${tokens} tokens`;
+        if (calls.length) {
+          return {
+            kind: "llm",
+            title: calls.length === 1 ? `Model decided to use ${calls[0].name}` : `Model decided to use ${calls.length} tools`,
+            side,
+            blocks: [{ code: calls.map((c) => `${c.name}(${formatArgs(c.arguments)})`).join("\n") }],
+          };
+        }
+        return { kind: "llm", title: "Model wrote its answer", side, blocks: p.content ? [{ text: truncate(p.content, 280) }] : [] };
+      }
+      case "tool_call":
+        return { kind: "tool", title: `Running ${p.name}`, blocks: [{ code: `${p.name}(${formatArgs(p.arguments)})` }] };
+      case "tool_result":
+        return p.error
+          ? { kind: "alert", title: `${p.name} returned an error`, blocks: [{ code: p.result }] }
+          : { kind: "result", title: `${p.name} returned a result`, blocks: [{ code: p.result }] };
+      case "tool_timeout":
+        return { kind: "alert", title: `${p.name} timed out`, blocks: [{ text: `No result after ${p.timeout_seconds}s, so the agent continues without it.` }] };
+      case "retry":
+        return { kind: "alert", title: `Temporary error, retrying (attempt ${p.attempt})`, blocks: [{ text: `${p.type}: ${p.error}. Next attempt in ${p.retry_in_seconds}s.` }] };
+      case "error":
+        return { kind: "alert", title: "The run failed", blocks: [{ code: `${p.type}: ${p.error}` }] };
+      case "cancelled":
+        return { kind: "alert", title: "The run was cancelled", blocks: p.reason ? [{ text: p.reason }] : [] };
+      case "final_answer":
+        return { kind: "final", title: "Final answer saved", blocks: [{ text: `Finished after ${p.iterations} round${p.iterations === 1 ? "" : "s"}.` }] };
+      default:
+        return { kind: "meta", title: event.step_type, blocks: [] };
+    }
+  }
+
+  function appendStep(event) {
+    const info = describe(event);
+    state.step += 1;
+
+    const item = el("li", `step step--${info.kind} is-new`);
+    item.append(el("span", "step-no", String(state.step)));
+
+    const body = el("div", "step-body");
+    const head = el("div", "step-head");
+    head.append(
+      el("strong", "step-title", info.title),
+      el("span", "step-time", [info.side, `+${elapsed()}s`].filter(Boolean).join(", ")),
+    );
+    body.append(head);
+
+    for (const block of info.blocks || []) {
+      if (block.list) {
+        const list = el("ul", "step-list");
+        block.list.forEach((entry) => list.append(el("li", null, entry)));
+        body.append(list);
+      } else if (block.code !== undefined) {
+        body.append(el("pre", null, String(block.code)));
+      } else if (block.text) {
+        body.append(el("p", "step-text", block.text));
+      }
+    }
+
+    const raw = el("details", "raw");
+    raw.append(el("summary", null, "Raw event"), el("pre", null, JSON.stringify(event, null, 2)));
+    body.append(raw);
+    item.append(body);
+
+    $("timeline").append(item);
+    setTimeout(() => item.classList.remove("is-new"), 800);
+    item.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  // --- Wiring ---------------------------------------------------------------------------
+  $("auth-form").addEventListener("submit", (e) => { e.preventDefault(); authenticate(false); });
+  $("register").addEventListener("click", () => authenticate(true));
+  $("sign-out").addEventListener("click", () => signOut("Signed out."));
+  $("create-session").addEventListener("click", createSession);
+  $("session-select").addEventListener("change", updateRunButton);
+  $("refresh-memory").addEventListener("click", () => loadMemories().catch((e) => setNote("run-note", e.message, true)));
+
+  $("run-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const message = $("message").value.trim();
+    if (!message) { setNote("run-note", "Write a message for the agent.", true); return; }
+    $("run-button").disabled = true;
+    setNote("run-note", "");
+    try {
+      const run = await api(`/sessions/${encodeURIComponent($("session-select").value)}/run`, { method: "POST", json: { message } });
+      openStream(run.run_id, message);
+    } catch (error) {
+      setNote("run-note", error.message, true);
+    } finally {
+      updateRunButton();
+    }
+  });
+
+  $("message").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("run-form").requestSubmit();
+  });
+
+  $("replay-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const runId = $("replay-id").value.trim();
+    if (runId) openStream(runId, null);
+  });
+
+  $("replay").addEventListener("click", () => { if (state.runId) openStream(state.runId, state.message); });
+
+  $("cancel").addEventListener("click", async () => {
+    try {
+      await api(`/runs/${encodeURIComponent(state.runId)}`, { method: "DELETE" });
+      setNote("stream-note", "Cancellation requested. The worker stops at its next checkpoint.");
+    } catch (error) {
+      setNote("stream-note", error.message, true);
+    }
+  });
+
+  $("api-base").addEventListener("change", (e) => {
+    state.api = e.target.value.trim().replace(/\/+$/, "") || "http://localhost:8000";
+    e.target.value = state.api;
+    store("ac_api", state.api);
+  });
+
+  // --- Start ------------------------------------------------------------------------------
+  state.api = recall("ac_api") || state.api;
+  state.token = recall("ac_token");
+  state.email = recall("ac_email");
+  $("api-base").value = state.api;
+  renderAuth();
+  if (state.token) refreshAll();
+</script>
+</body>
+</html>
